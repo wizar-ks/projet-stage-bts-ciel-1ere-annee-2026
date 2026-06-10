@@ -855,6 +855,4 @@ void loop()
     } 
 
   affichage_batterie();
-
-  //buffer_batterie();
 }
