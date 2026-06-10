@@ -179,7 +179,7 @@ void ajouterData_3(int code_3)
 
     head_data_3 = (head_data_3 + 1) % emplacement_stock_data_3;
 
-    FULL_data_3 = (head_data_3 == tail_data_1);
+    FULL_data_3 = (head_data_3 == tail_data_3);
 }
 
   int recupererData_3()
