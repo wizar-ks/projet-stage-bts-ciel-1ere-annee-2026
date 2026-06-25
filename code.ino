@@ -26,19 +26,8 @@ long temps_ancien;
 long intervalle_temps2 = 1000; //connexion bluetooth
 long temps_ancien2;
 
-long temps_ancien_carteSD = 0;
-long interval_notif_erreur_carteSD = 10000; //message erreur carte sd sur 10 secondes
-
-long ancien_temps_sauvegarde_carteSD = 0;
-long interval_notif_sauvegarde_carteSD = 15000; //inverval de sauvegarde des donnee 
-
-long ancien_temps_suppresion_data_carteSD = 0;
-long interval_temps_suppresion_data_carteSD = 30000; //choix sauvegarde fichier ou supprimer
-
-long temps_buffer_ancien = 0;
-long buffer_interval = 100; //temps buffer 
-
-
+long ancien_erreur_cartSD = 0;
+long erreur_carte_sd_interval = 3000;
 //=============================================BLE============================================//
 // The remote service we wish to connect to.
 static BLEUUID serviceUUID("91bad492-b950-4226-aa2b-4ede9fa42f59");
@@ -68,32 +57,32 @@ int data_4 = 0;
 
 //=============================================BUFFER============================================//
 
-  #define emplacement_stock_data_1 20
-  #define emplacement_stock_data_2 20
-  #define emplacement_stock_data_3 20
-  #define emplacement_stock_data_4 20
+  #define emplacement_stock_data_1 21
+  #define emplacement_stock_data_2 21
+  #define emplacement_stock_data_3 21
+  #define emplacement_stock_data_4 21
 
   int stock_1[emplacement_stock_data_1];
   int stock_2[emplacement_stock_data_2];
   int stock_3[emplacement_stock_data_3];
   int stock_4[emplacement_stock_data_4];
 
-  int head_data_1 = 0;
-  int tail_data_1 = 0;
-  bool FULL_data_1 = false;
+  bool buffer_plein_1 = false;
+  bool buffer_vide_1 = true;
 
-  int head_data_2 = 0;
-  int tail_data_2 = 0;
-  bool FULL_data_2 = false;
+  bool buffer_plein_2 = false;
+  bool buffer_vide_2 = true;
 
-  int head_data_3 = 0;
-  int tail_data_3 = 0;
-  bool FULL_data_3 = false;
+  bool buffer_plein_3 = false;
+  bool buffer_vide_3 = true;
 
-  int head_data_4 = 0;
-  int tail_data_4 = 0;
-  bool FULL_data_4 = false;
+  bool buffer_plein_4 = false;
+  bool buffer_vide_4 = true;
 
+  int boucle_data_1 = 0;
+  int boucle_data_2 = 0;
+  int boucle_data_3 = 0;
+  int boucle_data_4 = 0;
 
 //==========================fichier=================================//
 File myFile;//mon fichier 
@@ -101,140 +90,77 @@ File myFile;//mon fichier
 
 void ajouterData_1(int code_1)
 {
+  if (buffer_vide_1 == true)
+  {
+    stock_1[boucle_data_1] = code_1;
+    Serial.println(stock_1[boucle_data_1]);
+    Serial.println(boucle_data_1);
+    boucle_data_1++;
 
-    stock_1[head_data_1] = code_1;
-
-    if (FULL_data_1 == true)
+    if(boucle_data_1 == 20)
     {
-    tail_data_1 =  (tail_data_1 + 1) % emplacement_stock_data_1; // si depassement
+      Serial.println("buffer 1 plein");
+      buffer_vide_1 = false;
+      buffer_plein_1 = true;
     }
-
-    head_data_1 = (head_data_1 + 1) % emplacement_stock_data_1;
-
-    FULL_data_1 = (head_data_1 == tail_data_1);
-}
-
-  int recupererData_1()
-{
-    if((head_data_1 == tail_data_1) && !FULL_data_1)
+    else if(boucle_data_1 > 20)
     {
-      Serial.println("buffer vider");
-      return 0;
+      Serial.println("erreur buffer 1 dépassement");
+      boucle_data_1 = 0;
     }
-
-    int code_1;
-
-    code_1 = stock_1[tail_data_1];
-
-    tail_data_1 = (tail_data_1 + 1) % emplacement_stock_data_1;
-
-    FULL_data_1 = false;
-
-    return code_1;
+  }
 }
 
 void ajouterData_2(int code_2)
 {
+  if (buffer_vide_2 == true)
+  {
+    stock_2[boucle_data_2] = code_2;
 
-    stock_2[head_data_2] = code_2;
+    boucle_data_2++;
 
-    if (FULL_data_2 == true)
+    if(boucle_data_2 == 20)
     {
-    tail_data_2 =  (tail_data_2 + 1) % emplacement_stock_data_2; // si depassement
+      Serial.println("buffer 2 plein");
+      buffer_vide_2 = false;
+      buffer_plein_2 = true;
     }
-
-    head_data_2 = (head_data_2 + 1) % emplacement_stock_data_2;
-
-    FULL_data_2 = (head_data_2 == tail_data_2);
-}
-
-  int recupererData_2()
-{
-    if((head_data_2 == tail_data_2) && !FULL_data_2)
-    {
-      Serial.println("buffer vider");
-      return 0;
-    }
-
-    int code_2;
-
-    code_2 = stock_2[tail_data_2];
-
-    tail_data_2 = (tail_data_2 + 1) % emplacement_stock_data_2;
-
-    FULL_data_2 = false;
-
-    return code_2;
+  }
 }
 
 void ajouterData_3(int code_3)
 {
+  if (buffer_vide_3 == true)
+  {
+    stock_3[boucle_data_3] = code_3;
 
-    stock_3[head_data_3] = code_3;
+    boucle_data_3++;
 
-    if (FULL_data_3 == true)
+    if(boucle_data_3 == 20)
     {
-    tail_data_3 =  (tail_data_3 + 1) % emplacement_stock_data_3; // si depassement
+      Serial.println("buffer 3 plein");
+      buffer_vide_3 = false;
+      buffer_plein_3 = true;
     }
-
-    head_data_3 = (head_data_3 + 1) % emplacement_stock_data_3;
-
-    FULL_data_3 = (head_data_3 == tail_data_3);
-}
-
-  int recupererData_3()
-{
-    if((head_data_3 == tail_data_3) && !FULL_data_3)
-    {
-      Serial.println("buffer vider");
-      return 0;
-    }
-
-    int code_3;
-
-    code_3 = stock_3[tail_data_3];
-
-    tail_data_3 = (tail_data_3 + 1) % emplacement_stock_data_3;
-
-    FULL_data_3 = false;
-
-    return code_3;
+  }
 }
 
 void ajouterData_4(int code_4)
 {
+  if (buffer_vide_4 == true)
+  {
+    stock_4[boucle_data_4] = code_4;
 
-    stock_4[head_data_4] = code_4;
+    boucle_data_4++;
 
-    if (FULL_data_4 == true)
+    if(boucle_data_4 == 20)
     {
-    tail_data_4 =  (tail_data_4 + 1) % emplacement_stock_data_4; // si depassement
+      Serial.println("buffer 4 plein");
+      buffer_vide_4 = false;
+      buffer_plein_4 = true;
     }
-
-    head_data_4 = (head_data_4 + 1) % emplacement_stock_data_4;
-
-    FULL_data_4 = (head_data_4 == tail_data_4);
+  }
 }
-
-  int recupererData_4()
-{
-    if((head_data_4 == tail_data_4) && !FULL_data_4)
-    {
-      Serial.println("buffer vider");
-      return 0;
-    }
-
-    int code_4;
-
-    code_4 = stock_4[tail_data_4];
-
-    tail_data_4 = (tail_data_4 + 1) % emplacement_stock_data_4;
-
-    FULL_data_4 = false;
-
-    return code_4;
-}
-
 
 // Callback function to handle notifications
 static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, uint8_t *pData, size_t length, bool isNotify) { // ce qui permet d'avoir le résultat
@@ -257,10 +183,10 @@ static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, ui
  data_3 = 256*pData[4]+pData[5];
  data_4 = 256*pData[6]+pData[7];
 
-ajouterData_1(data_1);
-ajouterData_2(data_2);
-ajouterData_3(data_3);
-ajouterData_4(data_4);
+  ajouterData_1(data_1);
+  ajouterData_2(data_2);
+  ajouterData_3(data_3);
+  ajouterData_4(data_4);
 
   //Serial.println(data_1);
   //Serial.println(data_2);
@@ -427,43 +353,7 @@ void carte_sd()
     Serial.println(F("batterie.txt n'existe pas. creation du fichier batterie.txt"));
     // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
     myFile = SD.open("/batterie.txt");
-    writeFile(SD, "/batterie.txt", "batterie restante, consomation batterie en W ,total utilisation batterie en W, date d'enregistrement  \r\n");
-    myFile.close();
-  }
-
-  if (!SD.exists("/enregistrement_1.txt")) 
-  {
-    Serial.println(F("fichier enregistrement_1 n'existe pas. creation du fichier enregistrement_1.txt"));
-    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
-    myFile = SD.open("/enregistrement_1.txt");
-    writeFile(SD, "/enregistrement_1.txt", "batterie restante, consomation batterie en W ,total utilisation batterie en W, date d'enregistrement  \r\n");
-    myFile.close();
-  }
-
-  if (!SD.exists("/enregistrement_2.txt")) 
-  {
-    Serial.println(F("fichier enregistrement_2 n'existe pas. creation du fichier enregistrement_2.txt"));
-    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
-    myFile = SD.open("/enregistrement_2.txt");
-    writeFile(SD, "/enregistrement_2.txt", "batterie restante, consomation batterie en W ,total utilisation batterie en W, date d'enregistrement  \r\n");
-    myFile.close();
-  }
-
-    if (!SD.exists("/enregistrement_3.txt")) 
-  {
-    Serial.println(F("fichier enregistrement_3 n'existe pas. creation du fichier enregistrement_3.txt"));
-    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
-    myFile = SD.open("/enregistrement_3.txt");
-    writeFile(SD, "/enregistrement_3.txt", "batterie restante, consomation batterie en W ,total utilisation batterie en W, date d'enregistrement  \r\n");
-    myFile.close();
-  }
-
-    if (!SD.exists("/enregistrement_4.txt")) 
-  {
-    Serial.println(F("fichier enregistrement_4 n'existe pas. creation du fichier enregistrement_4.txt"));
-    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
-    myFile = SD.open("/enregistrement_4.txt");
-    writeFile(SD, "/enregistrement_4.txt", "batterie restante, consomation batterie en W ,total utilisation batterie en W, date d'enregistrement  \r\n");
+    writeFile(SD, "/batterie.txt", "tension \t Courant \t Température \t Temps  \r\n");
     myFile.close();
   }
 
@@ -520,249 +410,76 @@ void appendFile(fs::FS &fs, const char * path, const char * message)
 
 void sauvegarde_boucle ()
 {
-
-  if (SD.exists("/batterie.txt") && information_data == true)
+  if (SD.exists("/batterie.txt") && information_data == true && buffer_plein_1 == true && buffer_plein_2 == true && buffer_plein_3 == true && buffer_plein_4 == true )
   {
 
         myFile = SD.open("/batterie.txt");
-        String batterie = String(data_1) + "                " + String(data_2) + "                        " + String(data_3)  + "                              " + String(data_4) + "\r\n";
-
-        //Serial.println(batterie);  // Afficher dans le moniteur série
+        String batterie =     String(stock_1[0]) + "\t      " + String(stock_2[0]) + "\t" + String(stock_3[0])  + "\t" + String(stock_4[0]) + "\r\n" +
+                              String(stock_1[1]) + "\t      " + String(stock_2[1]) + "\t" + String(stock_3[1])  + "\t" + String(stock_4[1]) + "\r\n" +
+                              String(stock_1[2]) + "\t      " + String(stock_2[2]) + "\t" + String(stock_3[2])  + "\t" + String(stock_4[2]) + "\r\n" +
+                              String(stock_1[3]) + "\t      " + String(stock_2[3]) + "\t" + String(stock_3[3])  + "\t" + String(stock_4[3]) + "\r\n" +
+                              String(stock_1[4]) + "\t      " + String(stock_2[4]) + "\t" + String(stock_3[4])  + "\t" + String(stock_4[4]) + "\r\n" +
+                              String(stock_1[5]) + "\t      " + String(stock_2[5]) + "\t" + String(stock_3[5])  + "\t" + String(stock_4[5]) + "\r\n" +
+                              String(stock_1[6]) + "\t      " + String(stock_2[6]) + "\t" + String(stock_3[6])  + "\t" + String(stock_4[6]) + "\r\n" +
+                              String(stock_1[7]) + "\t      " + String(stock_2[7]) + "\t" + String(stock_3[7])  + "\t" + String(stock_4[7]) + "\r\n" +
+                              String(stock_1[8]) + "\t      " + String(stock_2[8]) + "\t" + String(stock_3[8])  + "\t" + String(stock_4[8]) + "\r\n" +
+                              String(stock_1[9]) + "\t      " + String(stock_2[9]) + "\t" + String(stock_3[9])  + "\t" + String(stock_4[9]) + "\r\n" +
+                              String(stock_1[10]) + "\t      " + String(stock_2[10]) + "\t" + String(stock_3[10])  + "\t" + String(stock_4[10]) + "\r\n" +
+                              String(stock_1[11]) + "\t      " + String(stock_2[11]) + "\t" + String(stock_3[11])  + "\t" + String(stock_4[11]) + "\r\n" +
+                              String(stock_1[12]) + "\t      " + String(stock_2[12]) + "\t" + String(stock_3[12])  + "\t" + String(stock_4[12]) + "\r\n" +
+                              String(stock_1[13]) + "\t      " + String(stock_2[13]) + "\t" + String(stock_3[13])  + "\t" + String(stock_4[13]) + "\r\n" +
+                              String(stock_1[14]) + "\t      " + String(stock_2[14]) + "\t" + String(stock_3[14])  + "\t" + String(stock_4[14]) + "\r\n" +
+                              String(stock_1[15]) + "\t      " + String(stock_2[15]) + "\t" + String(stock_3[15])  + "\t" + String(stock_4[15]) + "\r\n" +
+                              String(stock_1[16]) + "\t      " + String(stock_2[16]) + "\t" + String(stock_3[16])  + "\t" + String(stock_4[16]) + "\r\n" +
+                              String(stock_1[17]) + "\t      " + String(stock_2[17]) + "\t" + String(stock_3[17])  + "\t" + String(stock_4[17]) + "\r\n" +
+                              String(stock_1[18]) + "\t      " + String(stock_2[18]) + "\t" + String(stock_3[18])  + "\t" + String(stock_4[18]) + "\r\n" +
+                              String(stock_1[19]) + "\t      " + String(stock_2[19]) + "\t" + String(stock_3[19])  + "\t" + String(stock_4[19]) + "\r\n" ;
+                             
         appendFile(SD, "/batterie.txt", batterie.c_str()); // Sauvegarde sur la carte SD
-
-        Serial.println("sauvegarde effectue ! valeur :");
-        Serial.print(data_1);
-        Serial.print("  /   ");
-        Serial.print(data_2);
-        Serial.print("  /   ");
-        Serial.print(data_3);
-        Serial.print("  /   ");
-        Serial.print(data_4);
-
         myFile.close();
+
+        Serial.println(batterie);
+      
+      boucle_data_1 = 0;
+      boucle_data_2 = 0;
+      boucle_data_3 = 0;
+      boucle_data_4 = 0;
+
+      buffer_plein_1 = false;
+      buffer_vide_1 = true;
+
+      buffer_plein_2 = false;
+      buffer_vide_2 = true;
+
+      buffer_plein_3 = false;
+      buffer_vide_3 = true;
+
+      buffer_plein_4 = false;
+      buffer_vide_4 = true;
   }
-  else if (!SD.exists("/batterie.txt"))
-  {
-    Serial.println("le fichier n'existe pas");
 
+  long erreur_cartSD = millis();
+  if(erreur_cartSD - ancien_erreur_cartSD > erreur_carte_sd_interval)
+  {
+    if (!SD.exists("/batterie.txt"))
+    {
+      Serial.println("le fichier n'existe pas");
+    }
+    else if(information_data == false)
+    {
+      Serial.println("il est impossible de retrouver les information bluetooth");
+    }
+    else
+    {
+      Serial.println("buffer non plein");
+    }
+  ancien_erreur_cartSD = erreur_cartSD;
   }
-  else
-  {
-    Serial.println("il est impossible de retrouver les information bluetooth");
-  }
-}
-
-void choix_fichier_enregistrement_1()
-{
-  if (SD.exists("/enregistrement_1.txt") && information_data == true)
-  {
-
-    myFile = SD.open("/enregistrement_1.txt");
-    String enregistrement_1 = String(data_1) + "                " + String(data_2) + "                        " + String(data_3)  + "                              " + String(data_4) + "\r\n";
-
-     appendFile(SD, "/enregistrement_1.txt", enregistrement_1.c_str()); // Sauvegarde sur la carte SD
-
-        Serial.println("sauvegarde effectue ! valeur :");
-        Serial.print(data_1);
-        Serial.print("  /   ");
-        Serial.print(data_2);
-        Serial.print("  /   ");
-        Serial.print(data_3);
-        Serial.print("  /   ");
-        Serial.print(data_4);
-
-    myFile.close();
-
-  }
-  else if (!SD.exists("/enregistrement_1.txt"))
-  {
-    Serial.println("le fichier n'existe pas");
-
-  }
-  else
-  {
-     Serial.println("il est impossible de retrouver les information bluetooth");
-  }
-}
-
-void choix_fichier_enregistrement_2()
-{
-  if (SD.exists("/enregistrement_2.txt") && information_data == true)
-  {
-    myFile = SD.open("/enregistrement_2.txt");
-    String enregistrement_2 = String(data_1) + "                " + String(data_2) + "                        " + String(data_3)  + "                              " + String(data_4) + "\r\n";
-
-     appendFile(SD, "/enregistrement_2.txt",enregistrement_2.c_str()); // Sauvegarde sur la carte SD
-
-        Serial.println("sauvegarde effectue ! valeur :");
-        Serial.print(data_1);
-        Serial.print("  /   ");
-        Serial.print(data_2);
-        Serial.print("  /   ");
-        Serial.print(data_3);
-        Serial.print("  /   ");
-        Serial.print(data_4);
-
-        myFile.close();
-  }
-  else if (!SD.exists("/enregistrement_2.txt"))
-  {
-    Serial.println("le fichier n'existe pas");
-
-  }
-  else
-  {
-     Serial.println("il est impossible de retrouver les information bluetooth");
-  }
-}
-
-void choix_fichier_enregistrement_3()
-{
-  if (SD.exists("/enregistrement_3.txt") && information_data == true)
-  {
-    myFile = SD.open("/enregistrement_3.txt");
-    String enregistrement_3 = String(data_1) + "                " + String(data_2) + "                        " + String(data_3)  + "                              " + String(data_4) + "\r\n";
-
-     appendFile(SD, "/enregistrement_3.txt", enregistrement_3.c_str()); // Sauvegarde sur la carte SD
-
-        Serial.println("sauvegarde effectue ! valeur :");
-        Serial.print(data_1);
-        Serial.print("  /   ");
-        Serial.print(data_2);
-        Serial.print("  /   ");
-        Serial.print(data_3);
-        Serial.print("  /   ");
-        Serial.print(data_4);
-
-    myFile.close();
-
-  }
-  else if (!SD.exists("/enregistrement_3.txt"))
-  {
-    Serial.println("le fichier n'existe pas");
-
-  }
-  else
-  {
-     Serial.println("il est impossible de retrouver les information bluetooth");
-  }
-}
-
-void choix_fichier_enregistrement_4()
-{
-  if (SD.exists("/enregistrement_4.txt") && information_data == true)
-  {
-      myFile = SD.open("/enregistrement_4.txt");
-      String enregistrement_4 = String(data_1) + "                " + String(data_2) + "                        " + String(data_3)  + "                              " + String(data_4) + "\r\n";
-
-      appendFile(SD, "/enregistrement_4.txt", enregistrement_4.c_str()); // Sauvegarde sur la carte SD
-
-        Serial.println("sauvegarde effectue ! valeur :");
-        Serial.print(data_1);
-        Serial.print("  /   ");
-        Serial.print(data_2);
-        Serial.print("  /   ");
-        Serial.print(data_3);
-        Serial.print("  /   ");
-        Serial.print(data_4);
-
-    myFile.close();
-
-  }
-  else if (!SD.exists("/enregistrement_4.txt"))
-  {
-    Serial.println("le fichier n'existe pas");
-
-  }
-  else
-  {
-     Serial.println("il est impossible de retrouver les information bluetooth");
-  }
-}
-
-void choix_carteSD_moniteur_de_serie()
-{ 
-  if (choix_fichier == false)
-  {
-
-        if(Serial.available() > 0)
-        {
-          entrer = Serial.read();
-          switch (entrer)
-          {
-          
-          case '0':
-
-          sauvegarde_boucle ();
-
-          Serial.println("Choix fichier abtterie selectionné");
-
-          fichier_enregistrement_0 = true;
-
-          choix_fichier = true;
-
-          break;
-
-          case '1':
-          Serial.println("Choix fichier 1 selectionné");
-          choix_fichier_enregistrement_1();
-
-          fichier_enregistrement_1 = true;
-
-          choix_fichier = true;
-
-          break;
-
-          case '2':
-
-          Serial.println("Choix fichier 2 selectionné");
-          choix_fichier_enregistrement_2();
-
-          fichier_enregistrement_2 = true;
-
-          choix_fichier = true;
-          break;
-
-          case '3':
-          Serial.println("Choix fichier 3 selectionné");
-          choix_fichier_enregistrement_3();
-
-          fichier_enregistrement_3 = true;
-
-          choix_fichier = true;
-          break;
-
-          case '4':
-          Serial.println("Choix fichier 4 selectionné");
-          choix_fichier_enregistrement_4();
-
-          fichier_enregistrement_4 = true;
-
-          choix_fichier = true;
-          break;
-          }
-        }
-
-      long temps_suppresion_data_carteSD = millis();
-
-      if(temps_suppresion_data_carteSD - ancien_temps_suppresion_data_carteSD > interval_temps_suppresion_data_carteSD )
-      {
-       Serial.println("delai depassé choix fichier batterie selectionné par défault");
-
-       fichier_enregistrement_0 = true;
-
-       choix_fichier= true;
-      }
-  }    
 }
 
 void setup() 
 {
   Serial.begin(115200);
-
-  Serial.println("Choirsir dans quel fichier sauvegarder les données?");
-  Serial.println(" 0 = fichier batterie || 1 = fichier data_1 || 2 = fichier data_2 || 3 = fichier data_3 || 4 = fichier data_4");
-  Serial.println("!! après une minutes le fichier batterie sera selectionné !!");
 
   init_bluetooth();
 
@@ -773,21 +490,6 @@ void setup()
 }
 void loop() 
 {
-
-  choix_carteSD_moniteur_de_serie() ;
-
-  long temps_actu =millis();
-
-  /*
-  if (temps_actu-temps_ancien > intervalle_temps)//5 secondes d'interval
-  {
-
-    sauvegarde_temps();
-
-    temps_ancien = temps_actu;
-  }
-*/
-
   long temps_actu2 =millis();
 
   if (temps_actu2-temps_ancien2 > intervalle_temps2)// 1 seconde d'interval
@@ -796,63 +498,8 @@ void loop()
     
     temps_ancien2 = temps_actu2;
   }
-
-  long temps_buffer = millis();
-
-  if (temps_buffer - temps_buffer_ancien > buffer_interval)// 100ms d'interval 
-  {
-    int save_data_1 = recupererData_1();
-    int save_data_2 = recupererData_2();
-    int save_data_3 = recupererData_3();
-    int save_data_4 = recupererData_4();
-
-    Serial.print("data_1_buffer = ");
-    Serial.println(save_data_1);
-
-    Serial.print("data_2_buffer = ");
-    Serial.println(save_data_2);
-
-    Serial.print("data_3_buffer = ");
-    Serial.println(save_data_3);
-
-    Serial.print("data_4_buffer = ");
-    Serial.println(save_data_4);
-    
-    temps_buffer_ancien = temps_buffer;
-
-  }
   
-  long temps_sauvegarde_carteSD = millis(); // delai 1 seonde
-    if(temps_sauvegarde_carteSD - ancien_temps_sauvegarde_carteSD > interval_notif_sauvegarde_carteSD) 
-    {
-
-      if (fichier_enregistrement_0 == true)
-      {
-        sauvegarde_boucle();
-      }
-
-      if (fichier_enregistrement_1 == true)
-      {
-        choix_fichier_enregistrement_1();
-      }
-
-      if (fichier_enregistrement_2 == true)
-      {
-        choix_fichier_enregistrement_2();
-      }
-
-      if (fichier_enregistrement_3 == true)
-      {
-        choix_fichier_enregistrement_3();
-      }
-
-      if (fichier_enregistrement_4 == true)
-      {
-        choix_fichier_enregistrement_4();
-      }
-
-      ancien_temps_sauvegarde_carteSD = temps_sauvegarde_carteSD;
-    } 
+  sauvegarde_boucle();
 
   affichage_batterie();
 }
