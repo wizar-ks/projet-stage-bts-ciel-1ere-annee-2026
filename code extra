@@ -1,0 +1,973 @@
+//======================================================Signification led !!==============================================================================//
+//si la led clignote plusieurs fois d'affilé c'est qu'on attend une réponse de choix de fichier ( se fait seulement sur le moniteur de série !!)
+//si la led reste allumé sans s'éteindre c'est que le choix du fichier à bien été sélectionné mais qu'il attend de recevoir des data par BLE
+//si la lumière est éteint c'est que les data sont récupérer
+//si un petit clignotement se voit cela signifie que la carte sd enregegistre les données
+//======================================================================================================================================================//
+
+#include <Wire.h>
+#include <U8g2lib.h>
+
+#include "FS.h"
+#include <SD.h>
+
+#include "BLEDevice.h"
+
+#define led_pin 2
+
+#define PIN_SPI_CS 5 // CS pin
+
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+
+int seconde = 30;
+
+int temps = 0; //nombre de la durée d'enregistrement 
+int entrer = 0; //initialisation de la lecture de signal
+int choix = 0; //choix du temps
+int enregistrement = 1000; // temps d'enregistrement de la carte sd en ms
+
+int batterie_rest = 100; //initialsation de la batterie en pourcentage
+//===========================================Coeur===============================================//
+TaskHandle_t Task1;
+TaskHandle_t Task2;
+//=============================================Millis============================================//
+long intervalle_temps2 = 1000; //connexion bluetooth
+long temps_ancien2;
+
+long temps_ancien_carteSD = 0;
+long interval_notif_erreur_carteSD = 10000; //message erreur carte sd sur 10 secondes
+
+long ancien_temps_sauvegarde_carteSD = 0;
+long interval_notif_sauvegarde_carteSD = 15000; //inverval de sauvegarde des donnee 
+
+long ancien_temps_suppresion_data_carteSD = 0;
+long interval_temps_suppresion_data_carteSD = 37000; //choix sauvegarde fichier (temps de chargement jus'à la demande de slection environ 7 secondes donc 37 secondes de temps)
+
+long ancien_led_allume = 0;
+long interval_led_allume = 1000;
+
+long ancien_led_eteinte = 0;
+long interval_led_eteinte = 1500;
+
+long ancien_affichage_temps_restant = 0;
+long interval_affichage_temps_restant = 1000;
+
+long ancien_erreur_cartSD = 0;
+long erreur_carte_sd_interval = 3000;
+
+//=============================================BLE============================================//
+// The remote service we wish to connect to.
+static BLEUUID serviceUUID("91bad492-b950-4226-aa2b-4ede9fa42f59");
+// The characteristic of the remote service we are interested in.
+static BLEUUID charUUID("cba1d466-344c-4be3-ab3f-189f80dd7518");  
+
+static boolean doConnect = false;
+static boolean connected = false;
+static boolean doScan = false;
+static BLERemoteCharacteristic *pRemoteCharacteristic;
+static BLEAdvertisedDevice *myDevice;
+
+int data_1 = 0;//information pData
+int data_2 = 0;
+int data_3 = 0;
+int data_4 = 0;
+
+//=============================================verificateur============================================//
+bool information_data = false; // permet de sauvegarder dans la carte SD quand le BLE recois des données
+
+bool choix_fichier = false;
+
+bool fichier_enregistrement_0 = false;
+bool fichier_enregistrement_1 = false; //permet de selectionné le fichier et d'ecrire dedans
+bool fichier_enregistrement_2 = false;
+bool fichier_enregistrement_3 = false;
+bool fichier_enregistrement_4 = false;
+
+bool verification_carte_sd = false;
+bool verification_carte_sd_blockage = true;
+
+//=============================================BUFFER============================================//
+
+  int nbr_data = 0;
+  int emplacement_stock = 0;
+
+  int stock[4][20];
+
+  bool buffer_plein = false;
+  bool buffer_vide = true;
+
+  bool buffer_vide_4 = true;
+
+  int boucle_data = 0;
+
+
+//==========================fichier=================================//
+
+File myFile;//mon fichier 
+
+//========================================buffer circulaire====================================================//
+
+void ajouterData(int code)
+{
+  int i = 0;
+
+  if (buffer_vide == true)
+  {
+    Serial.println("nbr_data");
+    Serial.println(nbr_data);
+
+    Serial.println("stock");
+    Serial.println(emplacement_stock);
+
+    stock[nbr_data][emplacement_stock] = code;
+    emplacement_stock++;
+
+    if (nbr_data == 4)
+    {
+      Serial.println("buffer plein");
+      buffer_vide = false;
+      buffer_plein = true;
+    }
+
+    if(emplacement_stock == 20 && nbr_data < 4)
+    {
+      Serial.print("buffer");
+      Serial.print(i);
+      Serial.print(" sur 4 rempli");
+
+      nbr_data++;
+      emplacement_stock = 0;
+    }
+  }
+}
+
+//=========================================================================BLE========================================================================================================//
+
+// Callback function to handle notifications
+static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, uint8_t *pData, size_t length, bool isNotify) { // ce qui permet d'avoir le résultat
+  //Serial.print("Longueur data : ");
+  //Serial.println(length);
+  //Serial.print("Données : ");
+  for (size_t i = 0; i < length; i++) {
+    //Serial.print(pData[i]); // chiffre 
+    //Serial.print(" ");
+  }
+  //Serial.println();
+ if (isNotify == true)
+  {
+    information_data = true;
+  }
+
+ data_1 = 256*pData[0]+pData[1];
+ data_2 = 256*pData[2]+pData[3];
+ data_3 = 256*pData[4]+pData[5];
+ data_4 = 256*pData[6]+pData[7];
+
+ajouterData(data_1);
+//ajouterData(data_2);
+//ajouterData(data_3);
+//ajouterData(data_4);
+}
+
+class MyClientCallback : public BLEClientCallbacks {
+  void onConnect(BLEClient *pclient) {}
+
+  void onDisconnect(BLEClient *pclient) {
+    connected = false;
+    Serial.println("onDisconnect");
+  }
+};
+
+bool connectToServer() {
+  Serial.print("Forming a connection to ");
+  Serial.println(myDevice->getAddress().toString().c_str());
+
+  BLEClient *pClient = BLEDevice::createClient();
+  Serial.println(" - Created client");
+
+  pClient->setClientCallbacks(new MyClientCallback());
+
+  //Connectez-vous au serveur BLE supprimé.
+  pClient->connect(myDevice);  //Si vous transmettez BLEAdvertisedDevice au lieu d'une adresse, le type d'adresse du périphérique homologue (publique ou privée) sera reconnu.
+  Serial.println(" - Connected to server");
+  pClient->setMTU(517);  //Configurer le client pour qu'il demande la MTU maximale au serveur.
+
+  //Obtien une référence au service recherché sur le serveur BLE distant.
+  BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
+  if (pRemoteService == nullptr) {
+    Serial.print("Failed to find our service UUID: ");
+    Serial.println(serviceUUID.toString().c_str());
+    pClient->disconnect();
+    return false;
+  }
+  Serial.println(" - Found our service");
+
+  // Obtiens une référence à la caractéristique dans le service du serveur BLE distant.
+  pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+  if (pRemoteCharacteristic == nullptr) {
+    Serial.print("Failed to find our characteristic UUID: ");
+    Serial.println(charUUID.toString().c_str());
+    pClient->disconnect();
+    return false;
+  }
+  Serial.println(" - Found our characteristic");
+  //Lis la valeur de la caractéritique 
+  if (pRemoteCharacteristic->canRead()) {
+    String value = pRemoteCharacteristic->readValue();
+    Serial.print("The characteristic value was: ");
+    Serial.println(value.c_str());
+  }
+
+  if (pRemoteCharacteristic->canNotify()) {
+    // Register/Subscribe aux notifications
+    pRemoteCharacteristic->registerForNotify(notifyCallback);
+  }
+
+  connected = true;
+  return true;
+}
+
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
+  /**
+   * Called for each advertising BLE server.
+   */
+  void onResult(BLEAdvertisedDevice advertisedDevice) {
+    //Serial.print("BLE Advertised Device found: "); //affiche les information par exemple
+    //Serial.println(advertisedDevice.toString().c_str()); // Name: , Address: 2e:5f:ac:8e:af:36, manufacturer data: 060001092022d14b4a221f42d28aefae4dc1778960f532a416b7f97ebe, rssi: -73
+
+    //Nous avons trouvé un appareil, verifiaction du service
+    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
+
+      BLEDevice::getScan()->stop();
+      myDevice = new BLEAdvertisedDevice(advertisedDevice);
+      doConnect = true;
+      doScan = true;
+
+    }  // serveur trouvé
+  }  // onResult
+};  // MyAdvertisedDeviceCallbacks
+
+void init_bluetooth()
+{
+  Serial.println("Starting Arduino BLE Client application...");
+  BLEDevice::init("");
+
+  // Récupérez un Scanner et définissez la fonction de rappel que nous souhaitons utiliser pour être informés lorsque nous
+  // Un nouvel appareil a été détecté. Indiquez que vous souhaitez une analyse active et lancez-la.
+  // L'analyse doit s'exécuter pendant 5 secondes.
+  BLEScan *pBLEScan = BLEDevice::getScan();
+  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pBLEScan->setInterval(1349);
+  pBLEScan->setWindow(449);
+  pBLEScan->setActiveScan(true);
+  pBLEScan->start(5, false);
+}
+
+//===============================================================affcihage====================================================================//
+void affichage_batterie()
+{
+  u8g2.clearBuffer();// Nettoyage interne de la mémoire
+
+  u8g2.setFont(u8g2_font_ncenB08_tr);	// Choisir la police de charactère
+  u8g2.setCursor(5,10); 
+  u8g2.print("data_1 : ");
+  u8g2.setCursor(50,10); 
+  u8g2.print(data_1);	// Ce qu'on veut faire afficher sur l'écran comme variable
+
+  u8g2.setCursor(5,20); 
+  u8g2.print("data_2 : ");
+  u8g2.setCursor(50,20); 
+  u8g2.print(data_2);
+
+  u8g2.setCursor(5,30); 
+  u8g2.print("data_3 : ");
+  u8g2.setCursor(50,30); 
+  u8g2.print(data_3);
+
+  u8g2.setCursor(5,40); 
+  u8g2.print("data_4 : ");
+  u8g2.setCursor(50,40); 
+  u8g2.print(data_4);
+
+  //u8g2.drawStr(65,30,"%");	// Ce qu'on veut faire afficher sur l'écran premier 0 = axe horizontal  et deuxième 0 = axe vertical
+
+  u8g2.sendBuffer();// transfert de mémoire
+}
+//====================================================carte sd création fichier=====================================================================//
+void carte_sd()
+{
+
+  SD.begin(PIN_SPI_CS);//initialisation pin cs(sans ça impossible de créer les fichier !!)
+
+  if (!SD.exists("/batterie.txt")) {
+    Serial.println(F("batterie.txt n'existe pas. creation du fichier batterie.txt"));
+    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
+    myFile = SD.open("/batterie.txt");
+    writeFile(SD, "/batterie.txt", "data 1 potentiometre, data 2 gbf,data 3 thermocouple type k,compteur  \r\n");
+    myFile.close();
+  }
+
+  if (!SD.exists("/enregistrement_1.txt")) 
+  {
+    Serial.println(F("fichier enregistrement_1 n'existe pas. creation du fichier enregistrement_1.txt"));
+    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
+    myFile = SD.open("/enregistrement_1.txt");
+    writeFile(SD, "/enregistrement_1.txt", "data 1 potentiometre, data 2 gbf,data 3 thermocouple type k,compteur  \r\n");
+    myFile.close();
+  }
+
+  if (!SD.exists("/enregistrement_2.txt")) 
+  {
+    Serial.println(F("fichier enregistrement_2 n'existe pas. creation du fichier enregistrement_2.txt"));
+    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
+    myFile = SD.open("/enregistrement_2.txt");
+    writeFile(SD, "/enregistrement_2.txt", "data 1 potentiometre, data 2 gbf,data 3 thermocouple type k,compteur  \r\n");
+    myFile.close();
+  }
+
+    if (!SD.exists("/enregistrement_3.txt")) 
+  {
+    Serial.println(F("fichier enregistrement_3 n'existe pas. creation du fichier enregistrement_3.txt"));
+    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
+    myFile = SD.open("/enregistrement_3.txt");
+    writeFile(SD, "/enregistrement_3.txt", "data 1 potentiometre, data 2 gbf,data 3 thermocouple type k,compteur  \r\n");
+    myFile.close();
+  }
+
+    if (!SD.exists("/enregistrement_4.txt")) 
+  {
+    Serial.println(F("fichier enregistrement_4 n'existe pas. creation du fichier enregistrement_4.txt"));
+    // creer un nouveau fichier pour ouvrir directement le fichier puis le fermer
+    myFile = SD.open("/enregistrement_4.txt");
+    writeFile(SD, "/enregistrement_4.txt", "data 1 potentiometre,data 2 gbf,data 3 thermocouple type k,compteur  \r\n");
+    myFile.close();
+  }
+
+}
+/*
+void connect_bluetooth()
+{
+  if (doConnect == true) {
+    if (connectToServer()) {
+            Serial.println("We are now connected to the BLE Server.");
+    } else {
+            Serial.println("We have failed to connect to the server; there is nothing more we will do.");
+    }
+      doConnect = false;
+  }
+
+    //Si nous sommes connectés à un serveur BLE homologue, mettez à jour la caractéristique à chaque fois que nous sommes atteints.
+    // avec le temps actuel depuis le démarrage.
+    if (connected) 
+    {
+      String newValue = "Time since boot: " + String(millis() / 1000);
+      //Serial.println("Setting new characteristic value to \"" + newValue + "\"");
+
+      //Attribuez à la caractéristique la valeur du tableau d'octets qui est en réalité une chaîne de caractères.
+      pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+    } else if (doScan) {
+      BLEDevice::getScan()->start(0);  //démarrer une analyse après une déconnexion
+    }
+}
+*/
+
+//=====================================ECRIRE SUR LA CARTE SD (TITRE)===========================================//
+
+void writeFile(fs::FS &fs, const char * path, const char * message) 
+{
+  //Serial.printf("Ecriture: %s\n", path);
+
+  File myFile = fs.open(path , FILE_WRITE);
+  if(!myFile) 
+  {
+    Serial.println("Erreur d'ouverture du fichier pour ecrire");
+    return;
+  }
+  if(myFile.print(message)) 
+  {
+    Serial.println("le contenu a bien ete ecris");
+  }
+  else 
+  {
+    Serial.println("Erreur d'ecriture");
+  }
+  myFile.close();
+}
+
+//==========================ECRIRE DU TEXT DANS LA CARTE SD============================================//
+
+void appendFile(fs::FS &fs, const char * path, const char * message) 
+{
+  //Serial.printf("Appending to file: %s\n", path);
+
+  File myFile = fs.open(path, FILE_APPEND);
+  if(!myFile) 
+    {
+    Serial.println();
+    Serial.println("Erreur d'ouverture du fichier pour l'ajout");
+    return;
+    }
+  if(myFile.print(message)) 
+    {
+    Serial.println();
+    Serial.println("Message ajouter");
+    } 
+  else 
+    {
+    Serial.println();
+    Serial.println("Erreur d'ajout");
+    }
+  myFile.close();
+}
+//====================================================carte sd ecriture des data=====================================================================//
+void sauvegarde_boucle ()
+{
+  int i = 0;
+  char strBuffer[30] = {0};
+/*
+  for(i = 0; i < 20; i++)
+  {
+   // char test1[] = "String(stock_1[0]) + "      " + String(stock_2[0]) + "         " + String(stock_3[0])  + "       " + String(stock_4[0]) ";
+    //   char test2[] = String(stock_1[0]);
+  sprintf(strBuffer,"%d\t%d\t%d\t%d\n",stock_1[i],stock_2[i],stock_3[i],stock_4[i])
+   // strcat(test1 , test2);
+  }
+*/
+
+
+if (SD.exists("/batterie.txt") && information_data == true && buffer_plein == true)
+{
+     myFile = SD.open("/batterie.txt");
+
+    for(i = 0; i < 20; i++)
+    {
+      for(j = 0; j < 20; j++)
+      {
+
+      if j = 
+      sprintf(strBuffer,"%d\n",stock[j][i]);
+      //sprintf(strBuffer,"%d\t%d\t%d\t%d\n",stock_1[i],stock_2[i],stock_3[i],stock_4[i]);
+      //  String batterie = strBuffer
+        appendFile(SD, "/batterie.txt",strBuffer);
+      //  appendFile(SD, "/batterie.txt", batterie.c_str()); // Sauvegarde sur la carte SD
+        Serial.println(strBuffer);
+      }
+    } 
+
+     myFile.close();                        
+      
+      boucle_data = 0;
+
+      buffer_plein = false;
+      buffer_vide = true;
+}
+
+  
+  long erreur_cartSD = millis();
+  if(erreur_cartSD - ancien_erreur_cartSD > erreur_carte_sd_interval)
+  {
+    if (!SD.exists("/batterie.txt"))
+    {
+      Serial.println("le fichier n'existe pas");
+    }
+    else if(information_data == false)
+    {
+      Serial.println("il est impossible de retrouver les information bluetooth");
+    }
+    else
+    {
+      Serial.println("buffer non plein");
+    }
+  ancien_erreur_cartSD = erreur_cartSD;
+  }
+}
+
+void choix_fichier_enregistrement_1()
+{
+  if (SD.exists("/enregistrement_1.txt") && information_data == true)
+  {
+
+    myFile = SD.open("/enregistrement_1.txt");
+    /*
+    String enregistrement_1 = String(stock_1[0]) + "\t  " + String(stock_2[0]) + "\t     " + String(stock_3[0])  + "\t   " + String(stock_4[0]) + "\r\n" +
+                              String(stock_1[1]) + "\t  " + String(stock_2[1]) + "\t     " + String(stock_3[1])  + "\t   " + String(stock_4[1]) + "\r\n" +
+                              String(stock_1[2]) + "\t  "  + String(stock_2[2]) + "\t     " + String(stock_3[2])  + "\t   " + String(stock_4[2]) + "\r\n" +
+                              String(stock_1[3]) + "\t  " + String(stock_2[3]) + "\t     " + String(stock_3[3])  + "\t   " + String(stock_4[3]) + "\r\n" +
+                              String(stock_1[4]) + "\t  " + String(stock_2[4]) + "\t     " + String(stock_3[4])  + "\t   " + String(stock_4[4]) + "\r\n" +
+                              String(stock_1[5]) + "\t  "  + String(stock_2[5]) + "\t     " + String(stock_3[5])  + "\t   " + String(stock_4[5]) + "\r\n" +
+                              String(stock_1[6]) + "\t  " + String(stock_2[6]) + "\t     " + String(stock_3[6])  + "\t   " + String(stock_4[6]) + "\r\n" +
+                              String(stock_1[7]) + "\t  " + String(stock_2[7]) + "\t     " + String(stock_3[7])  + "\t   " + String(stock_4[7]) + "\r\n" +
+                              String(stock_1[8]) + "\t  " + String(stock_2[8]) + "\t     " + String(stock_3[8])  + "\t   " + String(stock_4[8]) + "\r\n" +
+                              String(stock_1[9]) + "\t  " + String(stock_2[9]) + "\t     " + String(stock_3[9])  + "\t   " + String(stock_4[9]) + "\r\n" +
+                              String(stock_1[10]) + "\t  " + String(stock_2[10]) + "\t     " + String(stock_3[10])  + "\t   " + String(stock_4[10]) + "\r\n" +
+                              String(stock_1[11]) + "\t  " + String(stock_2[11]) + "\t     " + String(stock_3[11])  + "\t   " + String(stock_4[11]) + "\r\n" +
+                              String(stock_1[12]) + "\t  " + String(stock_2[12]) + "\t     " + String(stock_3[12])  + "\t   " + String(stock_4[12]) + "\r\n" +
+                              String(stock_1[13]) + "\t  " + String(stock_2[13]) + "\t     " + String(stock_3[13])  + "\t   " + String(stock_4[13]) + "\r\n" +
+                              String(stock_1[14]) + "\t  " + String(stock_2[14]) + "\t     " + String(stock_3[14])  + "\t   " + String(stock_4[14]) + "\r\n" +
+                              String(stock_1[15]) + "\t  " + String(stock_2[15]) + "\t     " + String(stock_3[15])  + "\t   " + String(stock_4[15]) + "\r\n" +
+                              String(stock_1[16]) + "\t  " + String(stock_2[16]) + "\t     " + String(stock_3[16])  + "\t   " + String(stock_4[16]) + "\r\n" +
+                              String(stock_1[17]) + "\t  " + String(stock_2[17]) + "\t     " + String(stock_3[17])  + "\t   " + String(stock_4[17]) + "\r\n" +
+                              String(stock_1[18]) + "\t  " + String(stock_2[18]) + "\t     " + String(stock_3[18])  + "\t   " + String(stock_4[18]) + "\r\n" +
+                              String(stock_1[19]) + "\t  " + String(stock_2[19]) + "\t     " + String(stock_3[19])  + "\t   " + String(stock_4[19]) + "\r\n" ;
+                             
+        appendFile(SD, "/enregistrement_1.txt", enregistrement_1.c_str()); // Sauvegarde sur la carte SD
+        myFile.close();
+      /*
+      boucle_data_1 = 0;
+      boucle_data_2 = 0;
+      boucle_data_3 = 0;
+      boucle_data_4 = 0;
+
+      buffer_plein_1 = false;
+      buffer_vide_1 = true;
+
+      buffer_plein_2 = false;
+      buffer_vide_2 = true;
+
+      buffer_plein_3 = false;
+      buffer_vide_3 = true;
+
+      buffer_plein_4 = false;
+      buffer_vide_4 = true;
+      */
+  }
+
+
+    if (!SD.exists("/batterie.txt"))
+    {
+      Serial.println("le fichier n'existe pas");
+    }
+    else if(information_data == false)
+    {
+      Serial.println("il est impossible de retrouver les information bluetooth");
+    }
+    else
+    {
+      Serial.println("buffer non plein");
+    }
+  
+}
+
+void choix_fichier_enregistrement_2()
+{
+  if (SD.exists("/enregistrement_2.txt"))
+  {
+    myFile = SD.open("/enregistrement_2.txt");
+    String enregistrement_2 = String(data_1) + "\t\t" + String(data_2) + "\t\t" + String(data_3)  + "\t\t" + String(data_4) + "\r\n";
+
+     appendFile(SD, "/enregistrement_2.txt",enregistrement_2.c_str()); // Sauvegarde sur la carte SD
+
+        Serial.println("sauvegarde effectue ! valeur :");
+        Serial.print(data_1);
+        Serial.print("  /   ");
+        Serial.print(data_2);
+        Serial.print("  /   ");
+        Serial.print(data_3);
+        Serial.print("  /   ");
+        Serial.print(data_4);
+
+        myFile.close();
+  }
+}
+
+void choix_fichier_enregistrement_3()
+{
+  if (SD.exists("/enregistrement_3.txt"))
+  {
+    myFile = SD.open("/enregistrement_3.txt");
+    String enregistrement_3 = String(data_1) + "\t\t" + String(data_2) + "\t\t" + String(data_3)  + "\t\t" + String(data_4) + "\r\n";
+
+     appendFile(SD, "/enregistrement_3.txt", enregistrement_3.c_str()); // Sauvegarde sur la carte SD
+
+        Serial.println("sauvegarde effectue ! valeur :");
+        Serial.print(data_1);
+        Serial.print("  /   ");
+        Serial.print(data_2);
+        Serial.print("  /   ");
+        Serial.print(data_3);
+        Serial.print("  /   ");
+        Serial.print(data_4);
+
+    myFile.close();
+
+  }
+  else
+  {
+    Serial.println("le fichier n'existe pas");
+  }
+}
+
+void choix_fichier_enregistrement_4()
+{
+  if (SD.exists("/enregistrement_4.txt") && information_data == true)
+  {
+      myFile = SD.open("/enregistrement_4.txt");
+      String enregistrement_4 = String(data_1) + "\t" + String(data_2) + "\t" + String(data_3)  + "\t" + String(data_4) + "\r\n";
+
+      appendFile(SD, "/enregistrement_4.txt", enregistrement_4.c_str()); // Sauvegarde sur la carte SD
+
+        Serial.println("sauvegarde effectue ! valeur :");
+        Serial.print(data_1);
+        Serial.print("  /   ");
+        Serial.print(data_2);
+        Serial.print("  /   ");
+        Serial.print(data_3);
+        Serial.print("  /   ");
+        Serial.print(data_4);
+
+    myFile.close();
+
+  }
+  else
+  {
+    Serial.println("le fichier n'existe pas");
+  }
+}
+//===================================================choix de fichier dans le moniteur de série=====================================================================//
+void choix_carteSD_moniteur_de_serie()
+{ 
+  if (choix_fichier == false)
+  {
+
+
+  long affichage_temps_restant = millis();
+
+    //for (int i = 30 ; i > 0 ; i--)
+    //{
+      if(affichage_temps_restant - ancien_affichage_temps_restant > interval_affichage_temps_restant)
+      {
+        u8g2.clearBuffer();// Nettoyage interne de la mémoire
+        u8g2.setFont(u8g2_font_ncenB08_tr);	// Choisir la police de charactère
+        u8g2.setCursor(20,10); 
+        u8g2.print("en attente du choix");	
+        u8g2.setCursor(30,20); //x puis y
+        u8g2.print("du fichier...");
+        u8g2.setCursor(20,30); 
+        u8g2.print("temps restant : ");	
+        u8g2.setCursor(50,40); 
+        u8g2.print(seconde);// Ce qu'on veut faire afficher sur l'écran comme variable
+        u8g2.setCursor(62,40);
+        u8g2.print("s");
+
+        seconde--;
+
+        ancien_affichage_temps_restant = affichage_temps_restant;
+      }
+    //} 
+
+  u8g2.sendBuffer();// transfert de mémoire
+
+    long led_allume = millis();
+
+    if(led_allume - ancien_led_allume > interval_led_allume)
+    {
+      digitalWrite(led_pin , HIGH);
+
+      ancien_led_allume = led_allume;
+    }
+
+    long led_eteinte = millis();
+
+    if(led_eteinte - ancien_led_eteinte > interval_led_eteinte)
+    {
+
+      digitalWrite(led_pin , LOW);
+
+      ancien_led_eteinte = led_eteinte;
+    }
+
+        if(Serial.available() > 0)
+        {
+          entrer = Serial.read();
+          switch (entrer)
+          {
+          
+          case '0':
+
+          sauvegarde_boucle ();
+
+          Serial.println("Choix fichier abtterie selectionné");
+
+          fichier_enregistrement_0 = true;
+
+          digitalWrite(led_pin , LOW);
+
+          choix_fichier = true;
+
+          break;
+
+          case '1':
+          Serial.println("Choix fichier 1 selectionné");
+          choix_fichier_enregistrement_1();
+
+          digitalWrite(led_pin , LOW);
+
+          fichier_enregistrement_1 = true;
+
+          choix_fichier = true;
+
+          break;
+
+          case '2':
+
+          Serial.println("Choix fichier 2 selectionné");
+          choix_fichier_enregistrement_2();
+
+          digitalWrite(led_pin , LOW);
+
+          fichier_enregistrement_2 = true;
+
+          choix_fichier = true;
+          break;
+
+          case '3':
+          Serial.println("Choix fichier 3 selectionné");
+          choix_fichier_enregistrement_3();
+
+          digitalWrite(led_pin , LOW);
+
+          fichier_enregistrement_3 = true;
+
+          choix_fichier = true;
+          break;
+
+          case '4':
+          Serial.println("Choix fichier 4 selectionné");
+          choix_fichier_enregistrement_4();
+
+          digitalWrite(led_pin , LOW);
+
+          fichier_enregistrement_4 = true;
+
+          choix_fichier = true;
+          break;
+          }
+        }
+
+      long temps_suppresion_data_carteSD = millis();
+
+      if(temps_suppresion_data_carteSD > interval_temps_suppresion_data_carteSD )
+      {
+       Serial.println("delai depassé choix fichier batterie selectionné par défault");
+
+       fichier_enregistrement_0 = true;
+
+       digitalWrite(led_pin , LOW);
+
+       choix_fichier= true;
+
+      }
+  }    
+}
+
+void setup() 
+{
+  Serial.begin(115200);
+
+    xTaskCreatePinnedToCore(
+                          Task1Code, //focntion de la tache
+                          "Task 1", //nom de la tache
+                          10000, //taille de la pile (words)
+                          NULL, //paramètre d'entrée de la tâche
+                          2, //priotriter de la tache (priorité plus haute)
+                          &Task1, //Task handle
+                          0 //Coeur sur lequel exécuter la tâche (Noyau 0)
+                          );
+
+    xTaskCreatePinnedToCore(
+                          Task2Code,
+                          "Task 2",
+                          10000,
+                          NULL,
+                          2,
+                          &Task2,
+                          1
+                          );
+
+  pinMode(led_pin, OUTPUT);
+
+  Serial.println("Choirsir dans quel fichier sauvegarder les données?");
+  Serial.println(" 0 = fichier batterie || 1 = fichier data_1 || 2 = fichier data_2 || 3 = fichier data_3 || 4 = fichier data_4");
+  Serial.println("!! après 30 secondes le fichier batterie sera selectionné !!");
+
+  init_bluetooth();
+
+  carte_sd();
+
+  u8g2.begin();
+
+}
+
+//=======================================================coeur 1 configurer pour le scanner BLE===========================================//
+
+void Task1Code(void *pvParameters)
+{
+  for (;;)
+  {
+        if (information_data == true && choix_fichier == true)
+    {
+      affichage_batterie();
+    }
+    delay(1);
+ }
+}
+//=====================================================coeur 2 affichage batterie=================================================//
+void Task2Code (void *pvParameters)
+{
+  for (;;) 
+  {
+    if (doConnect == true) 
+    {
+      if (connectToServer()) 
+      {
+        Serial.println("We are now connected to the BLE Server.");
+      } 
+      else 
+      {
+        Serial.println("We have failed to connect to the server; there is nothing more we will do.");
+      }
+      doConnect = false;
+    }
+
+  // If we are connected to a peer BLE Server, update the characteristic each time we are reached
+  // with the current time since boot.
+  if (connected) 
+  {
+    String newValue = "Time since boot: " + String(millis() / 1000);
+    //Serial.println("Setting new characteristic value to \"" + newValue + "\"");
+
+    // Set the characteristic's value to be the array of bytes that is actually a string.
+    pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+  } 
+  else if (doScan) 
+  {
+  BLEDevice::getScan()->start(0);  // this is just example to start scan after disconnect, most likely there is better way to do it in arduino
+  }
+
+  delay(100);
+  }
+}
+
+void loop() 
+{
+  if (!SD.begin(PIN_SPI_CS)) 
+  { //pin CS
+    while (!SD.begin(PIN_SPI_CS)) 
+    {
+      Serial.println(F("Erreur de la cart SD, Ou elle n'est pas present !"));
+      delay(1000);
+
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_ncenB08_tr);	// Choisir la police de charactère
+      u8g2.setCursor(10,10); 
+      u8g2.print("La carte SD n'est pas");	// Ce qu'on veut faire afficher sur l'écran comme variable
+      u8g2.setCursor(30,20);
+      u8g2.print("inserer ou");
+      u8g2.setCursor(35,30);
+      u8g2.print("reconnu");
+      u8g2.sendBuffer();
+    }
+  }
+  else if (SD.begin(PIN_SPI_CS) && verification_carte_sd_blockage == true)
+  {
+    Serial.println("cart SD reconnu !");
+
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);	// Choisir la police de charactère
+    u8g2.setCursor(0,10); 
+    u8g2.print("Carte sd bien reconnu !");	// Ce qu'on veut faire afficher sur l'écran comme variable
+    u8g2.setCursor(20,20);
+    u8g2.print("lancement");
+    u8g2.setCursor(40,30);
+    u8g2.print("du");
+    u8g2.setCursor(15,40);
+    u8g2.print("programme...");
+    u8g2.sendBuffer();
+
+    delay(5000);// à retrier si on veut que le porgramme soit rapide !!
+  }
+
+  if (SD.begin(PIN_SPI_CS))
+  {
+    verification_carte_sd_blockage = false; //permet de ne pas répeter le programme au dessus si la carte sd est déjà reconnu
+  }
+
+  choix_carteSD_moniteur_de_serie();
+
+    if (information_data == false && choix_fichier == true)// sinon si le notify callback n'envoi pas d'information et que un des fichier a été choisi
+    {
+
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_ncenB08_tr);	// Choisir la police de charactère
+      u8g2.setCursor(0,10); 
+      u8g2.print("aucune detéction de data");	// Ce qu'on veut faire afficher sur l'écran comme variable
+      u8g2.setCursor(0,20); 
+      u8g2.print("relancer le programme");	// Ce qu'on veut faire afficher sur l'écran comme variable
+      u8g2.setCursor(0,30); 
+      u8g2.print("en meme temps que");	// Ce qu'on veut faire afficher sur l'écran comme variable
+      u8g2.setCursor(0,40); 
+      u8g2.print("le serveur");	// Ce qu'on veut faire afficher sur l'écran comme variable
+      u8g2.sendBuffer();
+      
+      digitalWrite(led_pin , HIGH);
+      Serial.println("aucune détéction de data");
+    }
+
+    /*
+    long temps_actu2 =millis();
+
+    if (temps_actu2-temps_ancien2 > intervalle_temps2)// 1 seconde d'interval
+    {
+      connect_bluetooth();
+      
+      temps_ancien2 = temps_actu2;
+    }
+    */
+
+    if (fichier_enregistrement_0 == true)
+    {
+      digitalWrite(led_pin , HIGH);
+      sauvegarde_boucle();
+      digitalWrite(led_pin , LOW);
+    }
+    if (fichier_enregistrement_1 == true)
+    {
+      digitalWrite(led_pin , HIGH);
+      choix_fichier_enregistrement_1();
+      digitalWrite(led_pin , LOW);
+    }
+    
+    long temps_sauvegarde_carteSD = millis(); // delai 1 seonde
+    if(temps_sauvegarde_carteSD - ancien_temps_sauvegarde_carteSD > interval_notif_sauvegarde_carteSD  && information_data == true ) 
+    {
+      digitalWrite(led_pin , HIGH);
+
+      if (fichier_enregistrement_2 == true)
+      {
+        choix_fichier_enregistrement_2();
+      }
+
+      if (fichier_enregistrement_3 == true)
+      {
+        choix_fichier_enregistrement_3();
+      }
+
+      if (fichier_enregistrement_4 == true)
+      {
+        choix_fichier_enregistrement_4();
+      }
+
+      digitalWrite(led_pin , LOW);
+
+      ancien_temps_sauvegarde_carteSD = temps_sauvegarde_carteSD;
+    }
+/*
+  else
+  {
+    Serial.println("en attente d'information");
+    delay(250);
+  }
+*/
+  
+  //buffer_batterie();
+}
