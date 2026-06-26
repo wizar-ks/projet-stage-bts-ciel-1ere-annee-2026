@@ -107,19 +107,23 @@ File myFile;//mon fichier
 
 //========================================buffer circulaire====================================================//
 
-void ajouterData(int code)
+void ajouterData(int code_1 , int code_2 , int code_3 , int code_4)
 {
   int i = 0;
 
   if (buffer_vide == true)
   {
-    Serial.println("nbr_data");
+    Serial.print("nbr_data : ");
     Serial.println(nbr_data);
 
-    Serial.println("stock");
+    Serial.print("stock : ");
     Serial.println(emplacement_stock);
 
-    stock[nbr_data][emplacement_stock] = code;
+    stock[1][emplacement_stock] = code_1;
+    stock[2][emplacement_stock] = code_2;
+    stock[3][emplacement_stock] = code_3;
+    stock[4][emplacement_stock] = code_4;
+
     emplacement_stock++;
 
     if (nbr_data == 4)
@@ -163,10 +167,7 @@ static void notifyCallback(BLERemoteCharacteristic *pBLERemoteCharacteristic, ui
  data_3 = 256*pData[4]+pData[5];
  data_4 = 256*pData[6]+pData[7];
 
-ajouterData(data_1);
-//ajouterData(data_2);
-//ajouterData(data_3);
-//ajouterData(data_4);
+ajouterData(data_1, data_2, data_3, data_4 );
 }
 
 class MyClientCallback : public BLEClientCallbacks {
@@ -422,7 +423,9 @@ void appendFile(fs::FS &fs, const char * path, const char * message)
 //====================================================carte sd ecriture des data=====================================================================//
 void sauvegarde_boucle ()
 {
+  int enregistrement = 20;
   int i = 0;
+  int j = 0;
   char strBuffer[30] = {0};
 /*
   for(i = 0; i < 20; i++)
@@ -439,24 +442,20 @@ if (SD.exists("/batterie.txt") && information_data == true && buffer_plein == tr
 {
      myFile = SD.open("/batterie.txt");
 
-    for(i = 0; i < 20; i++)
-    {
-      for(j = 0; j < 20; j++)
+      for(i = 0; i < 20; i++)
       {
-
-      if j = 
-      sprintf(strBuffer,"%d\n",stock[j][i]);
-      //sprintf(strBuffer,"%d\t%d\t%d\t%d\n",stock_1[i],stock_2[i],stock_3[i],stock_4[i]);
-      //  String batterie = strBuffer
-        appendFile(SD, "/batterie.txt",strBuffer);
-      //  appendFile(SD, "/batterie.txt", batterie.c_str()); // Sauvegarde sur la carte SD
-        Serial.println(strBuffer);
+          sprintf(strBuffer,"%d\t%d\t%d\t%d\n",stock[0][i],stock[1][i],stock[2][i],stock[3][i]);
+          //sprintf(strBuffer,"%d\t%d\t%d\t%d\n",stock_1[i],stock_2[i],stock_3[i],stock_4[i]);
+          //String batterie = strBuffer
+          appendFile(SD, "/batterie.txt",strBuffer);
+          //appendFile(SD, "/batterie.txt", batterie.c_str()); // Sauvegarde sur la carte SD
+          Serial.println(strBuffer);
       }
-    } 
 
      myFile.close();                        
       
-      boucle_data = 0;
+      nbr_data = 0;
+      emplacement_stock = 0;
 
       buffer_plein = false;
       buffer_vide = true;
